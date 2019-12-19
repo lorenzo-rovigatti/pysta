@@ -117,33 +117,3 @@ class Robot():
         self.left_motor.forward()
         self.right_motor.reverse()
 
-
-def main():
-    try:
-        GPIO.setup(PINS["standby"], GPIO.OUT)
-        GPIO.output(PINS["standby"], GPIO.HIGH)
-
-        US_servo = Servo(PINS["servo"])
-
-        US_sensor = US(PINS["trigger"], PINS["echo"])
-        print(US_sensor.distance())
-
-        left_motor = Motor(PINS["volt_left"], PINS["ground_left"], PINS["pwm_left"])
-        right_motor = Motor(PINS["volt_right"], PINS["ground_right"], PINS["pwm_right"])
-
-        robot = Robot(left_motor, right_motor, US_servo)
-
-        '''robot.forward()
-        time.sleep(2)
-        robot.left()
-        time.sleep(2)
-        robot.right()
-        time.sleep(2)'''
-    except Exception as e:
-        print(e)
-    finally:
-        GPIO.cleanup()
-
-if __name__ == '__main__':
-    main()
-
