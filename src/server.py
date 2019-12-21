@@ -1,10 +1,11 @@
-import asyncore
-import asynchat
-import socket
-import RPi.GPIO as GPIO
+'''
+Created on 19 dic 2019
+
+@author: lorenzo
+'''
+
+import asyncio
 import lib
-import time
-import logging
 
 PINS = {
     "volt_left" : 37,
@@ -19,97 +20,81 @@ PINS = {
     "echo" : 32
 }
 
+SERVER_HOSTNAME = ""
+SERVER_PORT = 8888
+BUFFER_SIZE = 100
 
-TCP_IP = ""
-TCP_PORT = 6666
-TCP_RATE = 8096
-BUFFER_SIZE = 32
-
-class EchoHandler(asynchat.async_chat):
-    """Handles echoing messages from a single client.
-    """
-
-    # Artificially reduce buffer sizes to illustrate
-    # sending and receiving partial messages.
-    ac_in_buffer_size = 64
-    ac_out_buffer_size = 64
     
-    def __init__(self, sock):
-        self.received_data = []
-        self.logger = logging.getLogger('EchoHandler')
-        asynchat.async_chat.__init__(self, sock)
-        # Start looking for the ECHO command
-        self.process_data = self._process_command
-        self.set_terminator('\n')
-
-    def collect_incoming_data(self, data):
-        self.logger.debug('collect_incoming_data() -> (%d bytes)\n"""%s"""', len(data), data)
-        self.received_data.append(data)
-
-    def found_terminator(self):
-        self.logger.debug('found_terminator()')
-        self.process_data()
+class Server():
+    def __init__(self, host, port, robot):
+        self.loop = asyncio.get_event_loop()
+        start_coroutine = asyncio.start_server(self.handle_echo, host, port, loop=self.loop)
+        self.server = self.loop.run_until_complete(start_coroutine)
+        self.robot = robot
+        
+    def run(self):
+        # Serve requests until Ctrl+C is pressed
+        print('Serving on {}'.format(self.server.sockets[0].getsockname()))
+        try:
+            self.loop.run_forever()
+        except KeyboardInterrupt:
+            pass
+        
+        # Close the server
+        self.server.close()
+        self.loop.run_until_complete(self.server.wait_closed())
+        self.loop.close()
+        
+    @asyncio.coroutine
+    def handle_echo(self, reader, writer):
+        data = yield from reader.read(100)
+        message = data.decode()
+        addr = writer.get_extra_info('peername')
+        print("Received %r from %r" % (message, addr))
+        
+        if message == "distance":
+            response = "Current distance: %lf" % self.robot.distance()
+        elif message == "left":
+            self.robot.left()
+            response = "Turning left"
+        elif message == "right":
+            self.robot.right()
+            response = "Turning right"
+        elif message == "forward":
+            self.robot.forward()
+            response = "Going forward"
+        elif message == "reverse":
+            self.robot.reverse()
+            response = "Going backward"
+        elif message == "stop":
+            self.robot.stop()
+            response = "Stopping"
+        else:
+            response = "Unrecognized command '%s'" % message
+                
+        print("Send: %r" % response)
+        writer.write(response.encode())
+        yield from writer.drain()
     
-    def _process_command(self):        
-        command = ''.join(self.received_data)
-        self.logger.debug('_process_command() "%s"', command)
-        command_verb, command_arg = command.strip().split(' ')
-        expected_data_len = int(command_arg)
-        self.set_terminator(expected_data_len)
-        self.process_data = self._process_message
-        self.received_data = []
+        print("Close the client socket")
+        writer.close()
+
+
+if __name__ == '__main__':
+    try:
+        lib.GPIO.setup(PINS["standby"], lib.GPIO.OUT)
+        lib.GPIO.output(PINS["standby"], lib.GPIO.HIGH)
+      
+        us_servo = lib.Servo(PINS["servo"])
+        us_sensor = lib.Ultrasonic_sensor(PINS["trigger"], PINS["echo"])
+      
+        left_motor = lib.Motor(PINS["volt_left"], PINS["ground_left"], PINS["pwm_left"])
+        right_motor = lib.Motor(PINS["volt_right"], PINS["ground_right"], PINS["pwm_right"])
+      
+        robot = lib.Robot(left_motor, right_motor, us_servo, us_sensor)
+        
+        server = Server(SERVER_HOSTNAME, SERVER_PORT, robot)
+        server.run()
+    finally:
+        lib.GPIO.cleanup()
     
-    def _process_message(self):
-        """We have read the entire message to be sent back to the client"""
-        to_echo = ''.join(self.received_data)
-        self.logger.debug('_process_message() echoing\n"""%s"""', to_echo)
-        self.push(to_echo)
-        # Disconnect after sending the entire response
-        # since we only want to do one thing at a time
-        self.close_when_done()
-
-    def handle_read(self):
-        pass
-
-
-class Server(asyncore.dispatcher):
-    def __init__(self, host, port):
-        self.logger = logging.getLogger('SERVER')
-        asyncore.dispatcher.__init__(self)
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.set_reuse_addr()
-        self.bind(('', port))
-        self.listen(BUFFER_SIZE)
-        self.logger.debug('binding to {}'.format(self.socket.getsockname()))
-
-    def handle_accept(self):
-        socket, address = self.accept()
-        self.logger.debug('new connection accepted')
-        EchoHandler(socket)
-        self.handle_close()
-
-    def handle_close(self):
-        self.close()
-
-
-try:
-    GPIO.setup(PINS["standby"], GPIO.OUT)
-    GPIO.output(PINS["standby"], GPIO.HIGH)
-
-    US_servo = lib.Servo(PINS["servo"])
-
-    US_sensor = lib.US(PINS["trigger"], PINS["echo"])
-
-    left_motor = lib.Motor(PINS["volt_left"], PINS["ground_left"], PINS["pwm_left"])
-    right_motor = lib.Motor(PINS["volt_right"], PINS["ground_right"], PINS["pwm_right"])
-
-    robot = lib.Robot(left_motor, right_motor, US_servo)
-
-    logging.basicConfig(level=logging.DEBUG, format='%(name)s: %(message)s',)
-    logging.debug('Server start')
-    server = Server('', TCP_PORT)
-    asyncore.loop()
-
-finally:
-    GPIO.cleanup()
-

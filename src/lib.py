@@ -1,8 +1,11 @@
 #!/usr/bin/python3
 
-import sys
 import time
-import RPi.GPIO as GPIO
+
+try:
+    import RPi.GPIO
+except (RuntimeError, ModuleNotFoundError):
+    from mock_RPi_GPIO import GPIO
 
 PINS = {
     "volt_left" : 37,
@@ -62,7 +65,7 @@ class Servo():
         #self.servo.ChangeDutyCycle(new_dc)
 
 
-class US():
+class Ultrasonic_sensor():
     def __init__(self, trig_pin, echo_pin):
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
@@ -92,10 +95,11 @@ class US():
 
 
 class Robot():
-    def __init__(self, left_motor, right_motor, servo):
+    def __init__(self, left_motor, right_motor, servo, us_sensor):
         self.left_motor = left_motor
         self.right_motor = right_motor
         self.servo = servo
+        self.us_sensor = us_sensor
 
     def forward(self):
         self.left_motor.forward()
@@ -116,4 +120,6 @@ class Robot():
     def right(self):
         self.left_motor.forward()
         self.right_motor.reverse()
-
+        
+    def distance(self):
+        return self.us_sensor.distance()

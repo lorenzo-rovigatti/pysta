@@ -1,73 +1,31 @@
-import asyncore
-import asynchat
-import socket
-import time
-import logging
-import json
+'''
+Created on 19 dic 2019
 
-TCP_IP = '192.168.1.141'
-TCP_PORT = 6666
-TCP_RATE = 8096
-BUFFER_SIZE = 32
+@author: lorenzo
+'''
 
-class Client(asynchat.async_chat):
-    """Sends messages to the server and receives responses.
-    """
+import asyncio
 
-    # Artificially reduce buffer sizes to illustrate
-    # sending and receiving partial messages.
-    ac_in_buffer_size = 64
-    ac_out_buffer_size = 64
-    
-    def __init__(self, host, port, message):
-        self.message = message
-        self.received_data = []
-        self.logger = logging.getLogger('EchoClient')
-        asynchat.async_chat.__init__(self)
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.logger.debug('connecting to %s', (host, port))
-        self.connect((host, port))
-        
-    def handle_connect(self):
-        self.logger.debug('handle_connect()')
-        # Send the command
-        self.push(b'ECHO %d\n' % len(self.message))
-        # Send the data
-        self.push_with_producer(EchoProducer(self.message, buffer_size=self.ac_out_buffer_size))
-        # We expect the data to come back as-is, 
-        # so set a length-based terminator
-        self.set_terminator(len(self.message))
-    
-    def collect_incoming_data(self, data):
-        """Read an incoming message from the client and put it into our outgoing queue."""
-        self.logger.debug('collect_incoming_data() -> (%d)\n"""%s"""', len(data), data)
-        self.received_data.append(data)
+@asyncio.coroutine
+def tcp_echo_client(message, loop):
+    reader, writer = yield from asyncio.open_connection('127.0.0.1', 8888, loop=loop)
 
-    def found_terminator(self):
-        self.logger.debug('found_terminator()')
-        received_message = ''.join(self.received_data)
-        if received_message == self.message:
-            self.logger.debug('RECEIVED COPY OF MESSAGE')
-        else:
-            self.logger.debug('ERROR IN TRANSMISSION')
-            self.logger.debug('EXPECTED "%s"', self.message)
-            self.logger.debug('RECEIVED "%s"', received_message)
+    print('Send: %r' % message)
+    writer.write(message.encode())
 
-class EchoProducer(asynchat.simple_producer):
-    logger = logging.getLogger('EchoProducer')
+    data = yield from reader.read(100)
+    print('Received: %r' % data.decode())
 
-    def more(self):
-        response = asynchat.simple_producer.more(self)
-        self.logger.debug('more() -> (%s bytes)\n"""%s"""', len(response), response)
-        return response
+    print('Close the socket')
+    writer.close()
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format='%(name)s: %(message)s',)
+message = 'Hello World!'
+loop = asyncio.get_event_loop()
 
-    msg = "daje".encode()
-    client = Client(TCP_IP, TCP_PORT, msg)
-    start = time.time()
-    logging.debug('Starting async loop for all connections, unix time {}'.format(start))
-    asyncore.loop()
-    logging.debug('{}'.format(time.time() - start))
-
+try:
+    while True:
+        command = input()
+        if len(command) > 0:
+            loop.run_until_complete(tcp_echo_client(command, loop))
+finally:
+    loop.close()
