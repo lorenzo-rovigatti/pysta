@@ -3,7 +3,7 @@
 import time
 
 try:
-    import RPi.GPIO
+    import RPi.GPIO as GPIO
 except (RuntimeError, ModuleNotFoundError):
     from mock_RPi_GPIO import GPIO
 
